@@ -1,6 +1,11 @@
-from fastapi import FastAPI, Query, HTTPException, status
-from src.crud import db_create_user, db_get_users_by_name, db_create_post, db_get_posts_by_title, db_create_comment, db_get_post_comments
+from fastapi import FastAPI, Query, HTTPException, status, Depends
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from src.security import create_access_token, decode_access_token
+from src.models import User
+from src.crud import db_create_user, db_get_user_by_id, db_get_users_by_name, db_create_post, db_get_posts_by_title, db_create_comment, db_get_post_comments, db_login_user
 from pydantic import BaseModel, Field, EmailStr
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 class UserCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=24)
@@ -15,17 +20,34 @@ class UserOut(BaseModel):
     class Config:
         from_attributes = True
 
+# class LoginRequest(BaseModel):
+#     email: EmailStr
+#     password: str = Field(..., min_length=8, max_length=36)
+
 class PostCreate(BaseModel):
-    user_id: int
     title: str = Field(..., min_length=4, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
 
 class CommentCreate(BaseModel):
-    user_id: int
     post_id: int
     description: str = Field(..., min_length=1, max_length=2000)
 
 app = FastAPI()
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    user_id = decode_access_token(token)
+
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = await db_get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return user
 
 @app.post("/create_user", response_model=UserOut)
 async def create_user(user_data: UserCreate):
@@ -43,8 +65,8 @@ async def search_users(name: str | None = Query(default=None, min_length=1, max_
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
 @app.post('/create_post')
-async def create_post(post_data: PostCreate):
-    created_post = await db_create_post(user_id=post_data.user_id, title=post_data.title, description=post_data.description)
+async def create_post(post_data: PostCreate, user: User = Depends(get_current_user)):
+    created_post = await db_create_post(user_id=user.id, title=post_data.title, description=post_data.description)
     if created_post is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
     return created_post
@@ -58,8 +80,8 @@ async def search_posts(title: str | None = Query(default=None, min_length=4, max
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
 @app.post('/comments')
-async def create_comment(comment_data: CommentCreate):
-    created_comment = await db_create_comment(user_id=comment_data.user_id, post_id=comment_data.post_id, description=comment_data.description)
+async def create_comment(comment_data: CommentCreate, user: User = Depends(get_current_user)):
+    created_comment = await db_create_comment(user_id=user.id, post_id=comment_data.post_id, description=comment_data.description)
     if created_comment is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
     return created_comment
@@ -70,3 +92,11 @@ async def get_comments(post_id: int):
     if comments is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return comments
+
+@app.post("/login")
+async def login_user(form_data: OAuth2PasswordRequestForm = Depends()) -> dict:
+    user = await db_login_user(email=form_data.username, password=form_data.password)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    token = create_access_token(user.id)
+    return {'access_token': token}

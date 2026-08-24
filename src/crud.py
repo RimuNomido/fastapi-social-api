@@ -13,6 +13,11 @@ async def db_create_user(name: str, email: str, password: str) -> User:
         await session.refresh(user)
         return user
 
+async def db_get_user_by_id(user_id: int) -> User | None:
+    async with async_session_maker() as session:
+        user = await session.scalar(select(User).where(User.id == user_id))
+        return user
+
 async def db_get_users_by_name(name: str) -> List[User]:
     async with async_session_maker() as session:
         result = await session.scalars(select(User).where(User.name==name))
