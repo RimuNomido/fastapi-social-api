@@ -1,17 +1,30 @@
+from src.exceptions import UserAlreadyExists, UserNotFound
 from src.database import async_session_maker
 from src.models import User, Post, Comment
 from src.security import verify_password, hash_password
 from sqlalchemy import select, update, delete
+from sqlalchemy.exc import IntegrityError
 from typing import List
 
 async def db_create_user(name: str, email: str, password: str) -> User:
     async with async_session_maker() as session:
         hashed_password = hash_password(password)
-        user = User(name=name, email=email, password_hash=hashed_password)
-        session.add(user)
+        try:
+            user = User(name=name, email=email, password_hash=hashed_password)
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+            return user
+        except IntegrityError as e:
+            await session.rollback()
+            if 'unique' in str(e.orig).lower():
+                raise UserAlreadyExists()
+            raise e
+
+async def db_delete_user(user_id: int) -> None:
+    async with async_session_maker() as session:
+        await session.execute(delete(User).where(User.id == user_id))
         await session.commit()
-        await session.refresh(user)
-        return user
 
 async def db_get_user_by_id(user_id: int) -> User | None:
     async with async_session_maker() as session:

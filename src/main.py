@@ -1,5 +1,7 @@
-from fastapi import FastAPI, Query, HTTPException, status, Depends
+from fastapi import FastAPI, Query, HTTPException, Request, status, Depends
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from starlette.responses import JSONResponse
+from src.exceptions import UserAlreadyExists
 from src.security import create_access_token, decode_access_token
 from src.models import User
 from src.crud import db_create_user, db_get_user_by_id, db_get_users_by_name, db_create_post, db_get_posts_by_title, db_create_comment, db_get_post_comments, db_login_user
@@ -17,9 +19,6 @@ class UserOut(BaseModel):
     name: str
     email: EmailStr
 
-    class Config:
-        from_attributes = True
-
 # class LoginRequest(BaseModel):
 #     email: EmailStr
 #     password: str = Field(..., min_length=8, max_length=36)
@@ -33,6 +32,10 @@ class CommentCreate(BaseModel):
     description: str = Field(..., min_length=1, max_length=2000)
 
 app = FastAPI()
+
+@app.exception_handler(UserAlreadyExists)
+async def user_exists_handler(request: Request, exc: UserAlreadyExists):
+    return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": 'Пользователь с таким email уже зарегистрирован'})
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     user_id = decode_access_token(token)
