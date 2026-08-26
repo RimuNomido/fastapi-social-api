@@ -61,6 +61,11 @@ async def db_get_posts_by_title(title: str) -> List[Post]:
         result = await session.scalars(select(Post).where(Post.title == title))
         return result.all()
 
+async def db_delete_post(post_id: int) -> None:
+    async with async_session_maker() as session:
+        await session.execute(delete(Post).where(Post.id == post_id))
+        await session.commit()
+
 async def db_create_comment(post_id: int, user_id: int, description: str) -> Comment:
     async with async_session_maker() as session:
         comment = Comment(post_id=post_id, user_id=user_id, description=description)
@@ -68,6 +73,11 @@ async def db_create_comment(post_id: int, user_id: int, description: str) -> Com
         await session.commit()
         await session.refresh(comment)
         return comment
+
+async def db_delete_comment(comment_id: int) -> None:
+    async with async_session_maker() as session:
+        await session.execute(delete(Comment).where(Comment.id == comment_id))
+        await session.commit()
 
 async def db_get_post_comments(post_id: int) -> List[Comment]:
     async with async_session_maker() as session:
